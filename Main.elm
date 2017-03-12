@@ -2,7 +2,8 @@ module Main exposing (..)
 
 import Html exposing (..)
 import Html.Attributes exposing (..)
-import Html.Events exposing (onClick)
+import Html.Events exposing (onClick, onInput)
+
 
 type alias Model =
     { query : String
@@ -17,14 +18,13 @@ type alias SearchResult =
     }
 
 
-type alias Msg =
-    { operation : String
-    , data : Int
-    }
+type Msg
+    = SetQuery String
+    | DeleteById Int
 
 
-model : Model
-model =
+initialModel : Model
+initialModel =
     { query = "tutorial"
     , results =
         [ { id = 1
@@ -55,14 +55,25 @@ elmHubHeader : Html Msg
 elmHubHeader =
     header []
         [ h1 [] [ text "ElmHub" ]
-        , span [ class "tagline" ] [ text "Like GitHub, but for Elm things!" ]
+        , span [ class "tagline" ] [ text "Like GitHub, but for Elm things." ]
         ]
 
 
 view : Model -> Html Msg
 view model =
     div [ class "content" ]
-        [ elmHubHeader
+        [ header []
+            [ h1 [] [ text "ElmHub" ]
+            , span [ class "tagline" ] [ text "Like GitHub, but for Elm things." ]
+            ]
+        , input
+            [ class "search-query"
+              -- TODO onInput, set the query in the model
+            , onInput SetQuery
+            , defaultValue model.query
+            ]
+            []
+        , button [ class "search-button" ] [ text "Search" ]
         , ul [ class "results" ] (List.map viewSearchResult model.results)
         ]
 
@@ -74,27 +85,29 @@ viewSearchResult result =
         , a [ href ("https://github.com/" ++ result.name), target "_blank" ]
             [ text result.name ]
         , button
+            -- TODO add an onClick handler that sends a DeleteById msg
             [ class "hide-result"
-            , onClick { operation = "DELETE_BY_ID", data = result.id }
-            ]
+            , onClick (DeleteById result.id)]
             [ text "X" ]
         ]
 
 
 update : Msg -> Model -> Model
 update msg model =
-    if msg.operation == "DELETE_BY_ID" then
-        { model
-            | results =
-                List.filter (\result -> result.id /= msg.data) model.results
-        }
-    else
-        model
+    -- TODO if we get a SetQuery msg, use it to set the model's query field,
+    -- and if we get a DeleteById msg, delete the appropriate result
+    case msg of
+        SetQuery query ->
+            { model | query = query }
+
+        DeleteById id ->
+            { model | results = List.filter (\result -> id /= result.id) model.results }
 
 
+main : Program Never Model Msg
 main =
     Html.beginnerProgram
         { view = view
         , update = update
-        , model = model
+        , model = initialModel
         }

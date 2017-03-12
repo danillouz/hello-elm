@@ -1,5 +1,18 @@
 # Hello Elm
 Learning Elm 💥
 
+# Install
+Make sure you have the [Elm Platform](https://github.com/elm-lang/elm-platform)
+installed and then run:
+
+```
+npm install -g elm-test elm-css elm-live
+```
+
+# Build
+```
+elm-live Main.elm --open --pushstate --output=elm.js
+```
+
 # Resources
-- [Introduction into Elm](https://medium.com/javascript-inside/introduction-into-elm-77512c6c0baf)
+- [Elm Workshop](https://github.com/rtfeldman/elm-workshop)

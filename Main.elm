@@ -1,33 +1,57 @@
 module Main exposing (..)
 
+import Auth
 import Html exposing (..)
 import Html.Attributes exposing (class, target, href, property, defaultValue)
 import Html.Events exposing (..)
-import Json.Decode exposing (..)
+import Http
+import Json.Decode exposing (Decoder)
 import Json.Decode.Pipeline exposing (..)
-import SampleResponse
 
 
 main : Program Never Model Msg
 main =
-    Html.beginnerProgram
+    Html.program
         { view = view
         , update = update
-        , model = initialModel
+        , init = ( initialModel, searchFeed initialModel.query )
+        , subscriptions = \_ -> Sub.none
         }
+
+
+searchFeed : String -> Cmd Msg
+searchFeed query =
+    let
+        url =
+            "https://api.github.com/search/repositories?access_token="
+                ++ Auth.token
+                ++ "&q="
+                ++ query
+                ++ "+language:elm&sort=stars&order=desc"
+
+        request =
+            Http.get url responseDecoder
+    in
+        Http.send HandleSearchResponse request
+
+
+responseDecoder : Decoder (List SearchResult)
+responseDecoder =
+    Json.Decode.at [ "items" ] (Json.Decode.list searchResultDecoder)
 
 
 searchResultDecoder : Decoder SearchResult
 searchResultDecoder =
     decode SearchResult
-        |> required "id" int
-        |> required "full_name" string
-        |> required "stargazers_count" int
+        |> required "id" Json.Decode.int
+        |> required "full_name" Json.Decode.string
+        |> required "stargazers_count" Json.Decode.int
 
 
 type alias Model =
     { query : String
     , results : List SearchResult
+    , errorMessage : Maybe String
     }
 
 
@@ -41,24 +65,9 @@ type alias SearchResult =
 initialModel : Model
 initialModel =
     { query = "tutorial"
-    , results = decodeResults SampleResponse.json
+    , results = []
+    , errorMessage = Nothing
     }
-
-
-responseDecoder : Decoder (List SearchResult)
-responseDecoder =
-    decode identity
-        |> required "items" (list searchResultDecoder)
-
-
-decodeResults : String -> List SearchResult
-decodeResults json =
-    case decodeString responseDecoder json of
-        Err errorMessage ->
-            [ ]
-
-        Ok searchResults ->
-            searchResults
 
 
 view : Model -> Html Msg
@@ -69,10 +78,20 @@ view model =
             , span [ class "tagline" ] [ text "Like GitHub, but for Elm things." ]
             ]
         , input [ class "search-query", onInput SetQuery, defaultValue model.query ] []
-        , button [ class "search-button" ] [ text "Search" ]
-        , ul [ class "results" ]
-            (List.map viewSearchResult model.results)
+        , button [ class "search-button", onClick Search ] [ text "Search" ]
+        , viewErrorMessage model.errorMessage
+        , ul [ class "results" ] (List.map viewSearchResult model.results)
         ]
+
+
+viewErrorMessage : Maybe String -> Html Msg
+viewErrorMessage errorMessage =
+    case errorMessage of
+        Just message ->
+            div [ class "error" ] [ text message ]
+
+        Nothing ->
+            text ""
 
 
 viewSearchResult : SearchResult -> Html Msg
@@ -87,19 +106,54 @@ viewSearchResult result =
 
 
 type Msg
-    = SetQuery String
+    = Search
+    | SetQuery String
     | DeleteById Int
+    | HandleSearchResponse (Result Http.Error (List SearchResult))
 
 
-update : Msg -> Model -> Model
+update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
+        Search ->
+            ( model, searchFeed model.query )
+
+        HandleSearchResponse result ->
+            case result of
+                Ok results ->
+                    ( { model | results = results, errorMessage = Nothing }, Cmd.none )
+
+                Err error ->
+                    let
+                        errorMessage =
+                            case error of
+                                Http.BadUrl _ ->
+                                    "You provided a bad URL"
+
+                                Http.Timeout ->
+                                    "The request timedout"
+
+                                Http.NetworkError ->
+                                    "A network occurred"
+
+                                Http.BadStatus _ ->
+                                    "A bad status code was receieved"
+
+                                Http.BadPayload _ _ ->
+                                    "The response body contains something unexpected"
+                    in
+                        ( { model | errorMessage = Just errorMessage }, Cmd.none )
+
         SetQuery query ->
-            { model | query = query }
+            ( { model | query = query }, Cmd.none )
 
         DeleteById idToHide ->
             let
                 newResults =
-                    List.filter (\{ id } -> id /= idToHide) model.results
+                    model.results
+                        |> List.filter (\{ id } -> id /= idToHide)
+
+                newModel =
+                    { model | results = newResults }
             in
-                { model | results = newResults }
+                ( newModel, Cmd.none )

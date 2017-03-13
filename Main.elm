@@ -1,10 +1,10 @@
-module Main exposing (..)
+port module Main exposing (..)
 
-import Auth
+import Json.Decode exposing (..)
 import Html exposing (..)
 import Html.Attributes exposing (class, target, href, property, defaultValue)
 import Html.Events exposing (..)
-import Http
+import Auth
 import Json.Decode exposing (Decoder)
 import Json.Decode.Pipeline exposing (..)
 
@@ -14,25 +14,19 @@ main =
     Html.program
         { view = view
         , update = update
-        , init = ( initialModel, searchFeed initialModel.query )
-        , subscriptions = \_ -> Sub.none
+        , init = ( initialModel, githubSearch (getQueryString initialModel.query) )
+        , subscriptions = \_ -> githubResponse decodeResponse
         }
 
 
-searchFeed : String -> Cmd Msg
-searchFeed query =
-    let
-        url =
-            "https://api.github.com/search/repositories?access_token="
-                ++ Auth.token
-                ++ "&q="
-                ++ query
-                ++ "+language:elm&sort=stars&order=desc"
-
-        request =
-            Http.get url responseDecoder
-    in
-        Http.send HandleSearchResponse request
+getQueryString : String -> String
+getQueryString query =
+    -- See https://developer.github.com/v3/search/#example for how to customize!
+    "access_token="
+        ++ Auth.token
+        ++ "&q="
+        ++ query
+        ++ "+language:elm&sort=stars&order=desc"
 
 
 responseDecoder : Decoder (List SearchResult)
@@ -105,55 +99,51 @@ viewSearchResult result =
         ]
 
 
-type Msg
-    = Search
-    | SetQuery String
-    | DeleteById Int
-    | HandleSearchResponse (Result Http.Error (List SearchResult))
-
-
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         Search ->
-            ( model, searchFeed model.query )
-
-        HandleSearchResponse result ->
-            case result of
-                Ok results ->
-                    ( { model | results = results, errorMessage = Nothing }, Cmd.none )
-
-                Err error ->
-                    let
-                        errorMessage =
-                            case error of
-                                Http.BadUrl _ ->
-                                    "You provided a bad URL"
-
-                                Http.Timeout ->
-                                    "The request timedout"
-
-                                Http.NetworkError ->
-                                    "A network occurred"
-
-                                Http.BadStatus _ ->
-                                    "A bad status code was receieved"
-
-                                Http.BadPayload _ _ ->
-                                    "The response body contains something unexpected"
-                    in
-                        ( { model | errorMessage = Just errorMessage }, Cmd.none )
+            ( model, githubSearch (getQueryString model.query) )
 
         SetQuery query ->
             ( { model | query = query }, Cmd.none )
 
-        DeleteById idToHide ->
+        HandleSearchResponse results ->
+            ( { model | results = results }, Cmd.none )
+
+        HandleSearchError error ->
+            ( { model | errorMessage = error }, Cmd.none )
+
+        DeleteById idToDelete ->
             let
                 newResults =
                     model.results
-                        |> List.filter (\{ id } -> id /= idToHide)
+                        |> List.filter (\{ id } -> id /= idToDelete)
 
                 newModel =
                     { model | results = newResults }
             in
                 ( newModel, Cmd.none )
+
+
+type Msg
+    = Search
+    | SetQuery String
+    | DeleteById Int
+    | HandleSearchResponse (List SearchResult)
+    | HandleSearchError (Maybe String)
+
+
+decodeResponse : Value -> Msg
+decodeResponse json =
+    case decodeValue responseDecoder json of
+        Ok results ->
+            HandleSearchResponse results
+
+        Err decodeError ->
+            HandleSearchError (Just decodeError)
+
+port githubSearch : String -> Cmd msg
+
+
+port githubResponse : (Value -> msg) -> Sub msg

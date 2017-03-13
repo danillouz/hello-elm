@@ -1,8 +1,28 @@
 module Main exposing (..)
 
 import Html exposing (..)
-import Html.Attributes exposing (..)
-import Html.Events exposing (onClick, onInput)
+import Html.Attributes exposing (class, target, href, property, defaultValue)
+import Html.Events exposing (..)
+import Json.Decode exposing (..)
+import Json.Decode.Pipeline exposing (..)
+import SampleResponse
+
+
+main : Program Never Model Msg
+main =
+    Html.beginnerProgram
+        { view = view
+        , update = update
+        , model = initialModel
+        }
+
+
+searchResultDecoder : Decoder SearchResult
+searchResultDecoder =
+    decode SearchResult
+        |> required "id" int
+        |> required "full_name" string
+        |> required "stargazers_count" int
 
 
 type alias Model =
@@ -18,45 +38,27 @@ type alias SearchResult =
     }
 
 
-type Msg
-    = SetQuery String
-    | DeleteById Int
-
-
 initialModel : Model
 initialModel =
     { query = "tutorial"
-    , results =
-        [ { id = 1
-          , name = "TheSeamau5/elm-checkerboardgrid-tutorial"
-          , stars = 66
-          }
-        , { id = 2
-          , name = "grzegorzbalcerek/elm-by-example"
-          , stars = 41
-          }
-        , { id = 3
-          , name = "sporto/elm-tutorial-app"
-          , stars = 35
-          }
-        , { id = 4
-          , name = "jvoigtlaender/Elm-Tutorium"
-          , stars = 10
-          }
-        , { id = 5
-          , name = "sporto/elm-tutorial-assets"
-          , stars = 7
-          }
-        ]
+    , results = decodeResults SampleResponse.json
     }
 
 
-elmHubHeader : Html Msg
-elmHubHeader =
-    header []
-        [ h1 [] [ text "ElmHub" ]
-        , span [ class "tagline" ] [ text "Like GitHub, but for Elm things." ]
-        ]
+responseDecoder : Decoder (List SearchResult)
+responseDecoder =
+    decode identity
+        |> required "items" (list searchResultDecoder)
+
+
+decodeResults : String -> List SearchResult
+decodeResults json =
+    case decodeString responseDecoder json of
+        Err errorMessage ->
+            [ ]
+
+        Ok searchResults ->
+            searchResults
 
 
 view : Model -> Html Msg
@@ -66,15 +68,10 @@ view model =
             [ h1 [] [ text "ElmHub" ]
             , span [ class "tagline" ] [ text "Like GitHub, but for Elm things." ]
             ]
-        , input
-            [ class "search-query"
-              -- TODO onInput, set the query in the model
-            , onInput SetQuery
-            , defaultValue model.query
-            ]
-            []
+        , input [ class "search-query", onInput SetQuery, defaultValue model.query ] []
         , button [ class "search-button" ] [ text "Search" ]
-        , ul [ class "results" ] (List.map viewSearchResult model.results)
+        , ul [ class "results" ]
+            (List.map viewSearchResult model.results)
         ]
 
 
@@ -84,30 +81,25 @@ viewSearchResult result =
         [ span [ class "star-count" ] [ text (toString result.stars) ]
         , a [ href ("https://github.com/" ++ result.name), target "_blank" ]
             [ text result.name ]
-        , button
-            -- TODO add an onClick handler that sends a DeleteById msg
-            [ class "hide-result"
-            , onClick (DeleteById result.id)]
+        , button [ class "hide-result", onClick (DeleteById result.id) ]
             [ text "X" ]
         ]
 
 
+type Msg
+    = SetQuery String
+    | DeleteById Int
+
+
 update : Msg -> Model -> Model
 update msg model =
-    -- TODO if we get a SetQuery msg, use it to set the model's query field,
-    -- and if we get a DeleteById msg, delete the appropriate result
     case msg of
         SetQuery query ->
             { model | query = query }
 
-        DeleteById id ->
-            { model | results = List.filter (\result -> id /= result.id) model.results }
-
-
-main : Program Never Model Msg
-main =
-    Html.beginnerProgram
-        { view = view
-        , update = update
-        , model = initialModel
-        }
+        DeleteById idToHide ->
+            let
+                newResults =
+                    List.filter (\{ id } -> id /= idToHide) model.results
+            in
+                { model | results = newResults }
